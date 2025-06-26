@@ -61,7 +61,7 @@ class YOLOTracker:
         )
 
         # Целевые классы
-        target_classes = {"car", "motorcycle"}
+        target_classes = {'car', 'motorcycle', 'bus', 'truck'}
 
         for res in results:
             if res.boxes is None:
@@ -71,6 +71,9 @@ class YOLOTracker:
             track_ids = res.boxes.id
             confidences = res.boxes.conf
             boxes = res.boxes.xyxy.cpu().numpy().astype(np.int32)
+
+            if class_ids is None or track_ids is None or confidences is None or boxes is None:
+                continue
 
             for cls_id, track_id, box, conf in zip(class_ids, track_ids, boxes, confidences):
                 cls_id = int(cls_id.item())
