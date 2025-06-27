@@ -1,13 +1,16 @@
 # main.py
 
+from pathlib import Path
+
 import cv2
 from tracker import YOLOTracker
 from utils import find_first_video
 
 
 def main():
-    folder = 'video'
-    video_path = find_first_video(folder)
+    video_dir = str(Path(__file__).resolve().parent.parent / 'video')
+
+    video_path = find_first_video(video_dir)
 
     cap = cv2.VideoCapture(video_path)
 
