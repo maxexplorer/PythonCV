@@ -1,10 +1,11 @@
+# tracker.py
+
 __all__ = ['YOLOTracker']
 
 import numpy as np
 import torch
 import cv2
 from ultralytics import YOLO
-
 from configs.config import Config
 
 
@@ -13,15 +14,18 @@ class YOLOTracker:
     Класс для трекинга транспортных средств с использованием модели YOLO и встроенного трекера.
     """
 
-    def __init__(self):
+    def __init__(self, roi_resized=(1280, 720)):
         self._model = None
         self._config = Config
         self._device = self._config.Device.CUDA.value if torch.cuda.is_available() else self._config.Device.CPU.value
 
+        self.cap = None
+        self.roi_resized = roi_resized
+        self.roi = None
+
     def load_model(self) -> YOLO:
         """
         Загружает YOLO модель и переносит её на нужное устройство.
-        :return: Инициализированная модель YOLO.
         """
         try:
             self._model = YOLO(self._config.TrackerConfig.model_path)
@@ -32,14 +36,26 @@ class YOLOTracker:
             raise
         return self._model
 
+    def select_roi(self):
+        """
+        Позволяет выбрать ROI вручную на первом кадре видео.
+        """
+        ret, frame = self.cap.read()
+        if not ret:
+            raise RuntimeError("Не удалось прочитать первый кадр.")
+
+        if frame.shape[1] != self.roi_resized[0] or frame.shape[0] != self.roi_resized[1]:
+            frame = cv2.resize(frame, self.roi_resized)
+
+        roi = cv2.selectROI("Выберите ROI и нажмите Enter", frame, fromCenter=False, showCrosshair=True)
+        cv2.destroyWindow("Выберите ROI и нажмите Enter")
+
+        self.roi = roi
+        print(f"Выбранный ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}")
+
     def _draw_box(self, frame: np.ndarray, box: list[int], track_id: int, cls_name: str, conf: float) -> None:
         """
         Отрисовывает bounding box, ID и confidence на кадре.
-        :param frame: изображение
-        :param box: координаты [x1, y1, x2, y2]
-        :param track_id: ID объекта
-        :param cls_name: название класса
-        :param conf: уверенность
         """
         x1, y1, x2, y2 = box
         color = (0, 0, 255)
@@ -51,8 +67,13 @@ class YOLOTracker:
     def predict(self, frame: np.ndarray) -> None:
         """
         Выполняет трекинг объектов на кадре и отображает результат только для автомобилей и мотоциклов.
-        :param frame: входное изображение
         """
+
+        # Обрезка по ROI, если выбран
+        if self.roi:
+            x, y, w, h = self.roi
+            frame = frame[y:y + h, x:x + w]
+
         results = self._model.track(
             frame,
             tracker=self._config.TrackerConfig.track_path,
@@ -72,7 +93,7 @@ class YOLOTracker:
             confidences = res.boxes.conf
             boxes = res.boxes.xyxy.cpu().numpy().astype(np.int32)
 
-            if class_ids is None or track_ids is None or confidences is None or boxes is None:
+            if class_ids is None or track_ids is None or confidences is None:
                 continue
 
             for cls_id, track_id, box, conf in zip(class_ids, track_ids, boxes, confidences):
@@ -81,13 +102,10 @@ class YOLOTracker:
                 conf = float(conf.item())
                 cls_name = res.names.get(cls_id, 'unknown')
 
-                # Фильтрация по классу
                 if cls_name not in target_classes:
                     continue
 
                 self._draw_box(frame, box, track_id, cls_name, conf)
 
-        # Изменение размера окна до 1280x720
-        resized_frame = cv2.resize(frame, (1280, 720))
+        resized_frame = cv2.resize(frame, self.roi_resized)
         cv2.imshow('frame', resized_frame)
-
