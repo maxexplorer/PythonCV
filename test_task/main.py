@@ -8,7 +8,7 @@ from utils import find_first_video
 
 
 def main():
-    video_dir = str(Path(__file__).resolve().parent.parent / 'video')
+    video_dir = str(Path(__file__).resolve().parent / 'video')
 
     video_path = find_first_video(video_dir)
 

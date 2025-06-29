@@ -37,9 +37,6 @@ class YOLOTracker:
         return self._model
 
     def select_roi(self):
-        """
-        Позволяет выбрать ROI вручную на первом кадре видео.
-        """
         ret, frame = self.cap.read()
         if not ret:
             raise RuntimeError("Не удалось прочитать первый кадр.")
@@ -47,11 +44,19 @@ class YOLOTracker:
         if frame.shape[1] != self.roi_resized[0] or frame.shape[0] != self.roi_resized[1]:
             frame = cv2.resize(frame, self.roi_resized)
 
-        roi = cv2.selectROI("Выберите ROI и нажмите Enter", frame, fromCenter=False, showCrosshair=True)
-        cv2.destroyWindow("Выберите ROI и нажмите Enter")
+        # Добавим текст на кадр
+        text = "Select ROI with mouse and press ENTER"
+        (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+        x = (frame.shape[1] - w) // 2
+        y = frame.shape[0] // 2
+        cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        # Теперь вызов selectROI — оно само откроет и закроет окно
+        roi = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
+        cv2.destroyWindow("Select ROI")
 
         self.roi = roi
-        print(f"Выбранный ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}")
+        print(f"Selected ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}")
 
     def _draw_box(self, frame: np.ndarray, box: list[int], track_id: int, cls_name: str, conf: float) -> None:
         """
