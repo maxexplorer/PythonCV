@@ -6,7 +6,10 @@ import numpy as np
 import torch
 import cv2
 from ultralytics import YOLO
+
 from configs.config import Config
+from predictions.tracker_prediction import TrackerPrediction
+from predictions.prediction_handler import PredictionHandler
 
 
 class YOLOTracker:
@@ -39,24 +42,24 @@ class YOLOTracker:
     def select_roi(self):
         ret, frame = self.cap.read()
         if not ret:
-            raise RuntimeError("Не удалось прочитать первый кадр.")
+            raise RuntimeError('Не удалось прочитать первый кадр.')
 
         if frame.shape[1] != self.roi_resized[0] or frame.shape[0] != self.roi_resized[1]:
             frame = cv2.resize(frame, self.roi_resized)
 
         # Добавим текст на кадр
-        text = "Select ROI with mouse and press ENTER"
+        text = 'Select ROI with mouse and press ENTER'
         (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
         x = (frame.shape[1] - w) // 2
         y = frame.shape[0] // 2
         cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # Теперь вызов selectROI — оно само откроет и закроет окно
-        roi = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
-        cv2.destroyWindow("Select ROI")
+        roi = cv2.selectROI('Select ROI', frame, fromCenter=False, showCrosshair=True)
+        cv2.destroyWindow('Select ROI')
 
         self.roi = roi
-        print(f"Selected ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}")
+        print(f'Selected ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}')
 
     def _draw_box(self, frame: np.ndarray, box: list[int], track_id: int, cls_name: str, conf: float) -> None:
         """
@@ -69,7 +72,7 @@ class YOLOTracker:
         cv2.putText(frame, label, (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-    def predict(self, frame: np.ndarray) -> None:
+    def predict(self, frame: np.ndarray) -> tuple[list[TrackerPrediction]]:
         """
         Выполняет трекинг объектов на кадре и отображает результат только для автомобилей и мотоциклов.
         """
@@ -78,6 +81,8 @@ class YOLOTracker:
         if self.roi:
             x, y, w, h = self.roi
             frame = frame[y:y + h, x:x + w]
+
+        predictions: list[TrackerPrediction] = []
 
         results = self._model.track(
             frame,
@@ -101,16 +106,31 @@ class YOLOTracker:
             if class_ids is None or track_ids is None or confidences is None:
                 continue
 
-            for cls_id, track_id, box, conf in zip(class_ids, track_ids, boxes, confidences):
+            for cls_id, track_id, box, confidence in zip(class_ids, track_ids, boxes, confidences):
                 cls_id = int(cls_id.item())
                 track_id = int(track_id.item())
-                conf = float(conf.item())
+                confidence = float(confidence.item())
                 cls_name = res.names.get(cls_id, 'unknown')
 
                 if cls_name not in target_classes:
                     continue
 
-                self._draw_box(frame, box, track_id, cls_name, conf)
+                prediction = TrackerPrediction(
+                    cls_id=cls_id,
+                    cls_name=cls_name,
+                    box=box.tolist(),
+                    track_id=track_id,
+                    conf=confidence
+                )
+
+                predictions.append(
+                    prediction
+                )
+
+                self._draw_box(frame, box, track_id, cls_name, confidence)
 
         resized_frame = cv2.resize(frame, self.roi_resized)
         cv2.imshow('frame', resized_frame)
+
+        return tuple(predictions)
+
