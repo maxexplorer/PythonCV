@@ -8,8 +8,7 @@ import cv2
 from ultralytics import YOLO
 
 from configs.config import Config
-from predictions.tracker_prediction import TrackerPrediction
-from predictions.prediction_handler import PredictionHandler
+from test_task.predictions.tracker_prediction import TrackerPrediction
 
 
 class YOLOTracker:
@@ -72,7 +71,7 @@ class YOLOTracker:
         cv2.putText(frame, label, (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-    def predict(self, frame: np.ndarray) -> tuple[list[TrackerPrediction]]:
+    def predict(self, frame: np.ndarray) -> tuple[TrackerPrediction, ...]:
         """
         Выполняет трекинг объектов на кадре и отображает результат только для автомобилей и мотоциклов.
         """
