@@ -3,7 +3,7 @@
 __all__ = ['TrackerPrediction']
 
 from dataclasses import dataclass
-from test_task.predictions.base_prediction import BasePrediction
+from src.predictions.base_prediction import BasePrediction
 
 @dataclass
 class TrackerPrediction(BasePrediction['TrackerPrediction']):

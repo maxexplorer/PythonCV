@@ -8,7 +8,7 @@ import cv2
 from ultralytics import YOLO
 
 from configs.config import Config
-from test_task.predictions.tracker_prediction import TrackerPrediction
+from src.predictions.tracker_prediction import TrackerPrediction
 
 
 class YOLOTracker:
