@@ -20,11 +20,21 @@ class YOLODetector(BaseDetector):
         results = self.model(roi_frame, conf=0.3, verbose=False)
 
         for res in results:
-            for box in res.boxes:
-                cls_id = int(box.cls.item())
-                if cls_id != 0:
+            class_ids = res.boxes.cls
+            confidence = res.boxes.conf
+            boxes = res.boxes.xyxy.cpu().numpy().astype(np.int32)
+
+            if class_ids is None or confidence is None or boxes is None:
+                continue
+
+            for cls_id, box, conf in zip(class_ids, boxes, confidence):
+                cls_id = int(cls_id.item())
+                cls_name = res.names.get(cls_id)
+                confidence = round(conf.item(), 2)
+                if cls_name != 'person':  # person
                     continue
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+                x1, y1, x2, y2 = box
                 x1 += x
                 x2 += x
                 y1 += y
