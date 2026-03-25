@@ -1,18 +1,17 @@
-# opencv_detector.py
-
 import cv2
 import numpy as np
 
-from dodopizza_test_task.detectors.base import BaseDetector
+from .base import BaseDetector
 
 class OpenCVDetector(BaseDetector):
     """
     Детекция через OpenCV (вычитание фона) в ROI.
     """
 
-    def __init__(self, video_path: str):
-        super().__init__(video_path)
+    def __init__(self, video_path: str, record: bool = False):
+        super().__init__(video_path, record)
         self.back_sub = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=50)
+        self.output_name = "opencv_output.mp4"
 
     def detect_person(self, frame: np.ndarray) -> bool:
         x, y, w, h = self.roi

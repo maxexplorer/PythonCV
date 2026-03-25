@@ -1,9 +1,7 @@
-# yolo_detector.py
-
 import numpy as np
 from ultralytics import YOLO
 
-from dodopizza_test_task.detectors.base import BaseDetector
+from .base import BaseDetector
 
 
 
@@ -12,9 +10,10 @@ class YOLODetector(BaseDetector):
     Детекция через YOLO в ROI.
     """
 
-    def __init__(self, video_path: str):
-        super().__init__(video_path)
+    def __init__(self, video_path: str, record: bool = False):
+        super().__init__(video_path, record)
         self.model = YOLO("yolo26n.pt")
+        self.output_name = "yolo_output.mp4"
 
     def detect_person(self, frame: np.ndarray) -> bool:
         x, y, w, h = self.roi
