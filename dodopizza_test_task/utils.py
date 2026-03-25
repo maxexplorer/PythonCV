@@ -1,10 +1,11 @@
+# utils.py
+
 import cv2
 import pandas as pd
 import numpy as np
-from typing import Tuple
 
 
-def select_roi(frame: np.ndarray) -> Tuple[int, int, int, int]:
+def select_roi(frame: np.ndarray) -> tuple[int, int, int, int]:
     """
     Позволяет пользователю выбрать ROI на кадре.
     """

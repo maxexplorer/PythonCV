@@ -1,3 +1,5 @@
+# main.py
+
 from ui import MainWindow
 from detectors.yolo_detector import YOLODetector
 from detectors.opencv_detector import OpenCVDetector

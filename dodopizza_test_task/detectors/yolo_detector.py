@@ -1,3 +1,5 @@
+# yolo_detector.py
+
 import numpy as np
 from ultralytics import YOLO
 
