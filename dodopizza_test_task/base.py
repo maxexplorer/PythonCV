@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import cv2
 import numpy as np
-from dodopizza_test_task.utils import TableStateTracker, Analytics, select_roi, draw_table_box
+from utils import TableStateTracker, Analytics, select_roi, draw_table_box
 
 
 class BaseDetector(ABC):

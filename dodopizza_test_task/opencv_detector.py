@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from .base import BaseDetector
+from base import BaseDetector
 
 class OpenCVDetector(BaseDetector):
     """

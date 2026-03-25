@@ -1,7 +1,7 @@
 import numpy as np
 from ultralytics import YOLO
 
-from .base import BaseDetector
+from base import BaseDetector
 
 
 
