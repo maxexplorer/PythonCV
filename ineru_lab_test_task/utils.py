@@ -23,7 +23,7 @@ def read_split(split_path: str) -> tuple[list[str], list[str]]:
     return split["train"], split["val"]
 
 
-def load_pair_annotations(session_path: str, source: str) -> list:
+def load_pair_annotations(session_path: str, source: str) -> dict:
     """
     Загружает аннотации пары изображений.
 
@@ -40,7 +40,7 @@ def load_pair_annotations(session_path: str, source: str) -> list:
     return load_json(path)
 
 
-def extract_matches(annotation: list) -> tuple[np.ndarray, np.ndarray]:
+def extract_matches(annotation: dict) -> tuple[np.ndarray, np.ndarray]:
     """
     Извлекает соответствия точек между изображениями.
 
