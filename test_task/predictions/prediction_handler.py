@@ -1,7 +1,7 @@
 # prediction_handler.py
 
 from typing import Generic, List
-from src.predictions.base_prediction import PredictionType
+from test_task.predictions.base_prediction import PredictionType
 
 class PredictionHandler(Generic[PredictionType]):
     """
