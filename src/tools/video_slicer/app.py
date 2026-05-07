@@ -3,9 +3,11 @@ from tkinter import (
     BooleanVar,
     Button,
     Checkbutton,
+    END,
     Entry,
     Frame,
     Label,
+    Listbox,
     Radiobutton,
     StringVar,
     Tk,
@@ -44,6 +46,7 @@ class VideoFrameSlicerApp:
 
         self.video_folder_var = StringVar(value=str(config.video_folder))
         self.output_folder_var = StringVar(value=str(config.output_folder))
+        self.selected_files_var = StringVar(value="Selected files: 0")
         self.max_count_var = StringVar(value=str(config.max_screenshots_per_video))
         self.resize_mode_var = StringVar(value="resize" if config.resize_enabled else "original")
         self.width_var = StringVar(value=str(config.target_size[0]) if config.target_size else "1280")
@@ -57,6 +60,7 @@ class VideoFrameSlicerApp:
         self._build_ui()
         self._bind_keys()
         self._sync_resize_controls()
+        self._refresh_selected_files()
 
     def run(self) -> None:
         self.root.mainloop()
@@ -73,6 +77,7 @@ class VideoFrameSlicerApp:
         preview.pack(side="right", fill="both", expand=True)
 
         self._build_path_row(controls, "Video folder", self.video_folder_var, self._choose_video_folder)
+        self._build_video_files_controls(controls)
         self._build_path_row(controls, "Output folder", self.output_folder_var, self._choose_output_folder)
 
         Label(controls, text="Max saves per video").pack(anchor="w", pady=(14, 2))
@@ -132,6 +137,16 @@ class VideoFrameSlicerApp:
         Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
         Button(row, text="...", command=command, width=3).pack(side="right", padx=(4, 0))
 
+    def _build_video_files_controls(self, parent: Frame) -> None:
+        Label(parent, textvariable=self.selected_files_var).pack(anchor="w", pady=(2, 2))
+        self.selected_files_list = Listbox(parent, height=4)
+        self.selected_files_list.pack(fill="x")
+
+        row = Frame(parent)
+        row.pack(fill="x", pady=(4, 8))
+        Button(row, text="Add video files", command=self._choose_video_files).pack(side="left", fill="x", expand=True)
+        Button(row, text="Clear", command=self._clear_video_files).pack(side="left", padx=(4, 0))
+
     def _bind_keys(self) -> None:
         self.root.bind("<space>", lambda event: self._toggle_pause())
         self.root.bind("<KeyPress-p>", lambda event: self._toggle_pause())
@@ -145,6 +160,35 @@ class VideoFrameSlicerApp:
         folder = filedialog.askdirectory(initialdir=self.video_folder_var.get() or ".")
         if folder:
             self.video_folder_var.set(folder)
+
+    def _choose_video_files(self) -> None:
+        filenames = filedialog.askopenfilenames(
+            initialdir=self.video_folder_var.get() or ".",
+            filetypes=(
+                ("Video files", "*.avi *.mov *.mp4 *.mkv *.m4v"),
+                ("All files", "*.*"),
+            ),
+        )
+        if not filenames:
+            return
+
+        known_files = set(self.config.selected_video_files)
+        for filename in filenames:
+            path = Path(filename)
+            if path not in known_files:
+                self.config.selected_video_files.append(path)
+                known_files.add(path)
+        self._refresh_selected_files()
+
+    def _clear_video_files(self) -> None:
+        self.config.selected_video_files.clear()
+        self._refresh_selected_files()
+
+    def _refresh_selected_files(self) -> None:
+        self.selected_files_list.delete(0, END)
+        for path in self.config.selected_video_files:
+            self.selected_files_list.insert(END, path.name)
+        self.selected_files_var.set(f"Selected files: {len(self.config.selected_video_files)}")
 
     def _choose_output_folder(self) -> None:
         folder = filedialog.askdirectory(initialdir=self.output_folder_var.get() or ".")
@@ -201,7 +245,7 @@ class VideoFrameSlicerApp:
             self.extractor.roi = selected_roi
         self.video_files = self.extractor.list_videos()
         if not self.video_files:
-            messagebox.showerror("No videos", f"No video files found in: {self.config.video_folder}")
+            messagebox.showerror("No videos", self._no_videos_message())
             return
 
         self.video_index = 0
@@ -337,7 +381,7 @@ class VideoFrameSlicerApp:
         if raw_frame is None:
             video_path = self._first_selected_video()
             if video_path is None:
-                messagebox.showerror("No videos", f"No video files found in: {self.config.video_folder}")
+                messagebox.showerror("No videos", self._no_videos_message())
                 return
             capture = cv2.VideoCapture(str(video_path))
             ok, raw_frame = capture.read()
@@ -380,3 +424,8 @@ class VideoFrameSlicerApp:
             f"{state}: {video_name} | frame {self.current_frame_id}/{total} | "
             f"saved {self.saved_count}/{self.config.max_screenshots_per_video}"
         )
+
+    def _no_videos_message(self) -> str:
+        if self.config.selected_video_files:
+            return "No supported video files found in selected files."
+        return f"No video files found in: {self.config.video_folder}"

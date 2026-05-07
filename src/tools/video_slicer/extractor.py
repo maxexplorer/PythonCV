@@ -18,6 +18,12 @@ class VideoFrameExtractor:
         self.config.output_folder.mkdir(parents=True, exist_ok=True)
 
     def list_videos(self) -> list[Path]:
+        if self.config.selected_video_files:
+            return [
+                path for path in self.config.selected_video_files
+                if path.is_file() and path.suffix.lower() in self.SUPPORTED_EXTENSIONS
+            ]
+
         if not self.config.video_folder.exists():
             return []
 
