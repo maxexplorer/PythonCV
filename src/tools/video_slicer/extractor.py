@@ -41,21 +41,18 @@ class VideoFrameExtractor:
         return cv2.resize(frame, target_size)
 
     def prepare_frame(self, frame):
-        frame = self.resize_if_needed(frame)
+        if self.roi is not None:
+            x, y, w, h = self.roi
+            frame = frame[y:y + h, x:x + w]
+            if frame.size == 0:
+                raise FrameProcessingError(
+                    f"ROI produced an empty frame: x={x}, y={y}, w={w}, h={h}"
+                )
 
-        if self.roi is None:
-            return frame
-
-        x, y, w, h = self.roi
-        cropped = frame[y:y + h, x:x + w]
-        if cropped.size == 0:
-            raise FrameProcessingError(
-                f"ROI produced an empty frame: x={x}, y={y}, w={w}, h={h}"
-            )
-        return cropped
+        return self.resize_if_needed(frame)
 
     def select_roi_from_frame(self, frame) -> Roi | None:
-        preview = self.resize_if_needed(frame)
+        preview = frame
         window_name = "Select ROI: drag mouse, Enter to apply, Esc to cancel"
         roi = self._select_roi_with_size_overlay(window_name, preview)
         cv2.destroyWindow(window_name)
@@ -92,7 +89,7 @@ class VideoFrameExtractor:
                 state["end"] = (x, y)
                 state["roi"] = self._normalize_roi(state["start"], state["end"])
 
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         cv2.setMouseCallback(window_name, on_mouse)
 
         while True:

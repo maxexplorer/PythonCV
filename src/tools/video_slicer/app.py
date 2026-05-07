@@ -63,6 +63,7 @@ class VideoFrameSlicerApp:
         self.root.protocol("WM_DELETE_WINDOW", self._close)
         self._sync_resize_controls()
         self._refresh_selected_files()
+        self._bind_settings_autosave()
 
     def run(self) -> None:
         self.root.mainloop()
@@ -106,7 +107,12 @@ class VideoFrameSlicerApp:
         self.height_entry = Entry(size_frame, textvariable=self.height_var, width=8)
         self.height_entry.pack(side="left")
 
-        Checkbutton(controls, text="Use ROI", variable=self.roi_var).pack(anchor="w", pady=(14, 0))
+        Checkbutton(
+            controls,
+            text="Use ROI",
+            variable=self.roi_var,
+            command=self._apply_roi_toggle,
+        ).pack(anchor="w", pady=(14, 0))
         Button(controls, text="Select ROI", command=self._select_roi).pack(fill="x", pady=(4, 0))
 
         Checkbutton(controls, text="Auto save", variable=self.auto_enabled_var).pack(anchor="w", pady=(14, 0))
@@ -160,6 +166,7 @@ class VideoFrameSlicerApp:
         folder = filedialog.askdirectory(initialdir=self.video_folder_var.get() or ".")
         if folder:
             self.video_folder_var.set(folder)
+            self._save_current_settings()
 
     def _choose_video_files(self) -> None:
         filenames = filedialog.askopenfilenames(
@@ -179,10 +186,12 @@ class VideoFrameSlicerApp:
                 self.config.selected_video_files.append(path)
                 known_files.add(path)
         self._refresh_selected_files()
+        self._save_current_settings()
 
     def _clear_video_files(self) -> None:
         self.config.selected_video_files.clear()
         self._refresh_selected_files()
+        self._save_current_settings()
 
     def _refresh_selected_files(self) -> None:
         self.selected_files_list.delete(0, END)
@@ -194,6 +203,7 @@ class VideoFrameSlicerApp:
         folder = filedialog.askdirectory(initialdir=self.output_folder_var.get() or ".")
         if folder:
             self.output_folder_var.set(folder)
+            self._save_current_settings()
 
     def _sync_resize_controls(self) -> None:
         state = "normal" if self.resize_mode_var.get() == "resize" else "disabled"
@@ -231,9 +241,14 @@ class VideoFrameSlicerApp:
         self.config.output_folder.mkdir(parents=True, exist_ok=True)
         if not self.config.use_roi:
             self.extractor.roi = None
+        self._save_current_settings()
         return True
 
     def _start(self) -> None:
+        if self.is_running:
+            self._apply_running_settings()
+            return
+
         if not self._apply_form_config():
             return
 
@@ -420,7 +435,7 @@ class VideoFrameSlicerApp:
             return False
 
         self.saved_count += 1
-        self.status_var.set(f"Saved {output_path.name} ({self.saved_count})")
+        self.status_var.set(f"Saved {output_path.name} ({self.saved_count}) | {self._current_video_info_text()}")
         return True
 
     def _step(self, direction: int) -> None:
@@ -446,6 +461,12 @@ class VideoFrameSlicerApp:
     def _select_roi(self) -> None:
         if not self._apply_form_config():
             return
+        if self.is_running:
+            self.is_paused = True
+            if self.after_id is not None:
+                self.root.after_cancel(self.after_id)
+                self.after_id = None
+            self._cancel_space_advance()
 
         raw_frame = self.current_raw_frame
         if raw_frame is None:
@@ -467,6 +488,30 @@ class VideoFrameSlicerApp:
         if self.current_raw_frame is not None:
             self._set_current_frame(self.current_raw_frame, self.current_frame_id)
         self.status_var.set("ROI selected." if roi else "ROI cancelled; full frame is used.")
+        self._save_current_settings()
+
+    def _apply_roi_toggle(self) -> None:
+        self.config.use_roi = self.roi_var.get()
+        if self.config.use_roi:
+            self.extractor.roi = self.config.roi
+        else:
+            self.extractor.roi = None
+            self.config.roi = None
+
+        if self.current_raw_frame is not None:
+            self._set_current_frame(self.current_raw_frame, self.current_frame_id)
+        self._save_current_settings()
+
+    def _apply_running_settings(self) -> None:
+        was_paused = self.is_paused
+        if not self._apply_form_config():
+            return
+
+        self.extractor.config = self.config
+        if self.current_raw_frame is not None:
+            self._set_current_frame(self.current_raw_frame, self.current_frame_id)
+        self.is_paused = was_paused
+        self.status_var.set(self._status_text())
 
     def _first_selected_video(self):
         self.extractor = VideoFrameExtractor(self.config)
@@ -501,13 +546,25 @@ class VideoFrameSlicerApp:
         self._next_video_or_finish()
 
     def _status_text(self) -> str:
-        video_name = self.player.video_path.name if self.player.video_path else "-"
         state = "Paused" if self.is_paused else "Playing"
         total = self.player.frame_count or "?"
         return (
-            f"{state}: {video_name} | frame {self.current_frame_id}/{total} | "
+            f"{state}: {self._current_video_info_text()} | frame {self.current_frame_id}/{total} | "
             f"saved {self.saved_count}"
         )
+
+    def _current_video_info_text(self) -> str:
+        video_name = self.player.video_path.name if self.player.video_path else "-"
+        return f"{video_name} | {self._current_frame_size_text()}"
+
+    def _current_frame_size_text(self) -> str:
+        frame = self.current_processed_frame if self.current_processed_frame is not None else self.current_raw_frame
+        if frame is None:
+            return "size -"
+
+        height, width = frame.shape[:2]
+        label = "ROI" if self.extractor.roi is not None else "frame"
+        return f"{label} {width}x{height}"
 
     def _no_videos_message(self) -> str:
         if self.config.selected_video_files:
@@ -515,13 +572,32 @@ class VideoFrameSlicerApp:
         return f"No video files found in: {self.config.video_folder}"
 
     def _close(self) -> None:
+        if not self._save_current_settings():
+            messagebox.showerror("Settings failed", "Failed to save settings.")
+        self._stop()
+        self.root.destroy()
+
+    def _bind_settings_autosave(self) -> None:
+        variables = (
+            self.video_folder_var,
+            self.output_folder_var,
+            self.resize_mode_var,
+            self.width_var,
+            self.height_var,
+            self.auto_enabled_var,
+            self.auto_step_var,
+            self.roi_var,
+        )
+        for variable in variables:
+            variable.trace_add("write", lambda *args: self._save_current_settings())
+
+    def _save_current_settings(self) -> bool:
         self._apply_config_without_validation()
         try:
             save_slicer_config(self.config)
-        except OSError as error:
-            messagebox.showerror("Settings failed", f"Failed to save settings: {error}")
-        self._stop()
-        self.root.destroy()
+        except OSError:
+            return False
+        return True
 
     def _apply_config_without_validation(self) -> None:
         self.config.video_folder = Path(self.video_folder_var.get())
