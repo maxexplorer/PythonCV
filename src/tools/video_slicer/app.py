@@ -47,7 +47,6 @@ class VideoFrameSlicerApp:
         self.video_folder_var = StringVar(value=str(config.video_folder))
         self.output_folder_var = StringVar(value=str(config.output_folder))
         self.selected_files_var = StringVar(value="Selected files: 0")
-        self.max_count_var = StringVar(value=str(config.max_screenshots_per_video))
         self.resize_mode_var = StringVar(value="resize" if config.resize_enabled else "original")
         self.width_var = StringVar(value=str(config.target_size[0]) if config.target_size else "1280")
         self.height_var = StringVar(value=str(config.target_size[1]) if config.target_size else "720")
@@ -78,9 +77,6 @@ class VideoFrameSlicerApp:
         self._build_path_row(controls, "Video folder", self.video_folder_var, self._choose_video_folder)
         self._build_video_files_controls(controls)
         self._build_path_row(controls, "Output folder", self.output_folder_var, self._choose_output_folder)
-
-        Label(controls, text="Max saves per video").pack(anchor="w", pady=(14, 2))
-        Entry(controls, textvariable=self.max_count_var).pack(fill="x")
 
         Label(controls, text="Frame size").pack(anchor="w", pady=(14, 2))
         Radiobutton(
@@ -209,7 +205,6 @@ class VideoFrameSlicerApp:
 
     def _apply_form_config(self) -> bool:
         try:
-            max_count = self._read_positive_int(self.max_count_var.get(), "Max saves")
             auto_step = self._read_positive_int(self.auto_step_var.get(), "Frame interval")
             target_size = None
             if self.resize_mode_var.get() == "resize":
@@ -222,7 +217,6 @@ class VideoFrameSlicerApp:
 
         self.config.video_folder = Path(self.video_folder_var.get())
         self.config.output_folder = Path(self.output_folder_var.get())
-        self.config.max_screenshots_per_video = max_count
         self.config.target_size = target_size
         self.config.auto_enabled = self.auto_enabled_var.get()
         self.config.auto_step = auto_step
@@ -329,8 +323,6 @@ class VideoFrameSlicerApp:
     def _auto_save_if_needed(self) -> None:
         if not self.config.auto_enabled:
             return
-        if self.saved_count >= self.config.max_screenshots_per_video:
-            return
         if self.current_frame_id % self.config.auto_step != 0:
             return
         self._save_current_frame("auto")
@@ -343,10 +335,6 @@ class VideoFrameSlicerApp:
     def _save_current_frame(self, prefix: str) -> None:
         if self.player.video_path is None or self.current_processed_frame is None:
             return
-        if self.saved_count >= self.config.max_screenshots_per_video:
-            self.status_var.set("Save limit reached for current video.")
-            return
-
         try:
             output_path = self.extractor.save_frame(
                 self.player.video_path,
@@ -359,7 +347,7 @@ class VideoFrameSlicerApp:
             return
 
         self.saved_count += 1
-        self.status_var.set(f"Saved {output_path.name} ({self.saved_count}/{self.config.max_screenshots_per_video})")
+        self.status_var.set(f"Saved {output_path.name} ({self.saved_count})")
 
     def _step(self, direction: int) -> None:
         if not self.is_running or not self.is_paused:
@@ -419,7 +407,7 @@ class VideoFrameSlicerApp:
         total = self.player.frame_count or "?"
         return (
             f"{state}: {video_name} | frame {self.current_frame_id}/{total} | "
-            f"saved {self.saved_count}/{self.config.max_screenshots_per_video}"
+            f"saved {self.saved_count}"
         )
 
     def _no_videos_message(self) -> str:

@@ -11,7 +11,6 @@ class SlicerConfig:
     video_folder: Path
     output_folder: Path
     selected_video_files: list[Path] = field(default_factory=list)
-    max_screenshots_per_video: int = 300
     target_size: Size | None = None
     auto_enabled: bool = True
     auto_step: int = 1

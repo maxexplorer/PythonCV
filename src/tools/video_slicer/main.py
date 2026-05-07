@@ -35,12 +35,6 @@ def parse_args() -> argparse.Namespace:
         help="Folder for saved frames.",
     )
     parser.add_argument(
-        "--max-screenshots-per-video",
-        type=int,
-        default=300,
-        help="Maximum number of saved frames per video.",
-    )
-    parser.add_argument(
         "--target-size",
         nargs=2,
         metavar=("WIDTH", "HEIGHT"),
@@ -71,7 +65,6 @@ def main() -> None:
         SlicerConfig(
             video_folder=Path(args.video_folder),
             output_folder=Path(args.output_folder),
-            max_screenshots_per_video=args.max_screenshots_per_video,
             target_size=parse_size(args.target_size),
             auto_enabled=not args.manual,
             auto_step=max(args.auto_step, 1),
