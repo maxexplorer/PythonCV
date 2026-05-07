@@ -6,6 +6,7 @@ from config import SlicerConfig
 
 
 Size = tuple[int, int]
+DEFAULT_OUTPUT_FOLDER = Path(__file__).resolve().parents[2] / "dataset"
 
 
 def parse_size(values: list[str] | None) -> Size | None:
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-folder",
-        default=r"D:\Matller\ProductionCounters\yolo\dataset",
+        default=str(DEFAULT_OUTPUT_FOLDER),
         help="Folder for saved frames.",
     )
     parser.add_argument(

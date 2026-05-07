@@ -43,6 +43,8 @@ class VideoFrameSlicerApp:
         self.current_frame_id = 0
         self.photo = None
         self.after_id = None
+        self.space_advance_after_id = None
+        self.space_is_down = False
 
         self.video_folder_var = StringVar(value=str(config.video_folder))
         self.output_folder_var = StringVar(value=str(config.output_folder))
@@ -142,13 +144,14 @@ class VideoFrameSlicerApp:
         Button(row, text="Clear", command=self._clear_video_files).pack(side="left", padx=(4, 0))
 
     def _bind_keys(self) -> None:
-        self.root.bind("<space>", lambda event: self._toggle_pause())
-        self.root.bind("<KeyPress-p>", lambda event: self._toggle_pause())
-        self.root.bind("<KeyPress-P>", lambda event: self._toggle_pause())
-        self.root.bind("<KeyPress-s>", lambda event: self._save_manual())
-        self.root.bind("<KeyPress-S>", lambda event: self._save_manual())
-        self.root.bind("<Left>", lambda event: self._step(-1))
-        self.root.bind("<Right>", lambda event: self._step(1))
+        self.root.bind_all("<KeyPress-space>", self._handle_space_press)
+        self.root.bind_all("<KeyRelease-space>", self._handle_space_release)
+        self.root.bind_all("<KeyPress-p>", self._handle_pause_key)
+        self.root.bind_all("<KeyPress-P>", self._handle_pause_key)
+        self.root.bind_all("<KeyPress-s>", self._handle_save_key)
+        self.root.bind_all("<KeyPress-S>", self._handle_save_key)
+        self.root.bind_all("<Left>", self._handle_left_key)
+        self.root.bind_all("<Right>", self._handle_right_key)
 
     def _choose_video_folder(self) -> None:
         folder = filedialog.askdirectory(initialdir=self.video_folder_var.get() or ".")
@@ -244,7 +247,7 @@ class VideoFrameSlicerApp:
         self.is_running = True
         self.is_paused = False
         self._open_current_video()
-        self._schedule_next_frame()
+        self._play_next_frame()
 
     def _open_current_video(self) -> None:
         video_path = self.video_files[self.video_index]
@@ -261,6 +264,7 @@ class VideoFrameSlicerApp:
         if self.after_id is not None:
             self.root.after_cancel(self.after_id)
             self.after_id = None
+        self._cancel_space_advance()
         self.player.close()
         self.status_var.set("Stopped.")
 
@@ -268,9 +272,67 @@ class VideoFrameSlicerApp:
         if not self.is_running:
             return
         self.is_paused = not self.is_paused
+        self._cancel_space_advance()
         self.status_var.set(self._status_text())
         if not self.is_paused:
             self._schedule_next_frame()
+
+    def _handle_pause_key(self, event=None) -> str:
+        self._toggle_pause()
+        return "break"
+
+    def _handle_save_key(self, event=None) -> str:
+        self._save_manual()
+        return "break"
+
+    def _handle_left_key(self, event=None) -> str:
+        self._step(-1)
+        return "break"
+
+    def _handle_right_key(self, event=None) -> str:
+        self._step(1)
+        return "break"
+
+    def _handle_space_press(self, event=None) -> str:
+        if not self.is_running:
+            return "break"
+
+        if not self.is_paused:
+            self._toggle_pause()
+            return "break"
+
+        if self.space_is_down:
+            return "break"
+
+        self.space_is_down = True
+        self._step(1)
+        self._schedule_space_advance()
+        return "break"
+
+    def _handle_space_release(self, event=None) -> str:
+        self._cancel_space_advance()
+        return "break"
+
+    def _schedule_space_advance(self) -> None:
+        if not self.is_running or not self.is_paused or not self.space_is_down:
+            return
+
+        delay = self._playback_delay_ms()
+        self.space_advance_after_id = self.root.after(delay, self._play_space_advance)
+
+    def _play_space_advance(self) -> None:
+        self.space_advance_after_id = None
+        if not self.is_running or not self.is_paused or not self.space_is_down:
+            return
+
+        self._step(1)
+        self._schedule_space_advance()
+
+    def _cancel_space_advance(self) -> None:
+        self.space_is_down = False
+        if self.space_advance_after_id is not None:
+            self.root.after_cancel(self.space_advance_after_id)
+            self.space_advance_after_id = None
 
     def _schedule_next_frame(self) -> None:
         if not self.is_running or self.is_paused:
@@ -330,11 +392,13 @@ class VideoFrameSlicerApp:
     def _save_manual(self) -> None:
         if self.current_processed_frame is None:
             return
-        self._save_current_frame("manual")
+        saved = self._save_current_frame("manual")
+        if saved and self.is_running:
+            self._advance_one_frame()
 
-    def _save_current_frame(self, prefix: str) -> None:
+    def _save_current_frame(self, prefix: str) -> bool:
         if self.player.video_path is None or self.current_processed_frame is None:
-            return
+            return False
         try:
             output_path = self.extractor.save_frame(
                 self.player.video_path,
@@ -344,10 +408,11 @@ class VideoFrameSlicerApp:
             )
         except FrameProcessingError as error:
             messagebox.showerror("Save failed", str(error))
-            return
+            return False
 
         self.saved_count += 1
         self.status_var.set(f"Saved {output_path.name} ({self.saved_count})")
+        return True
 
     def _step(self, direction: int) -> None:
         if not self.is_running or not self.is_paused:
@@ -357,6 +422,17 @@ class VideoFrameSlicerApp:
         ok, raw_frame, frame_id = self.player.read_at(target)
         if ok:
             self._set_current_frame(raw_frame, frame_id)
+
+    def _advance_one_frame(self) -> None:
+        if not self.is_running:
+            return
+
+        ok, raw_frame, frame_id = self.player.read_next()
+        if not ok:
+            self._next_video_or_finish()
+            return
+
+        self._set_current_frame(raw_frame, frame_id)
 
     def _select_roi(self) -> None:
         if not self._apply_form_config():
