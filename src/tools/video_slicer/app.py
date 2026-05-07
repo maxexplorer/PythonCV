@@ -21,6 +21,7 @@ from PIL import Image, ImageTk
 from config import SlicerConfig
 from extractor import FrameProcessingError, VideoFrameExtractor
 from player import VideoPlayer
+from settings import save_slicer_config
 
 
 class VideoFrameSlicerApp:
@@ -59,6 +60,7 @@ class VideoFrameSlicerApp:
 
         self._build_ui()
         self._bind_keys()
+        self.root.protocol("WM_DELETE_WINDOW", self._close)
         self._sync_resize_controls()
         self._refresh_selected_files()
 
@@ -152,6 +154,7 @@ class VideoFrameSlicerApp:
         self.root.bind_all("<KeyPress-S>", self._handle_save_key)
         self.root.bind_all("<Left>", self._handle_left_key)
         self.root.bind_all("<Right>", self._handle_right_key)
+        self.root.bind_all("<Escape>", self._handle_escape_key)
 
     def _choose_video_folder(self) -> None:
         folder = filedialog.askdirectory(initialdir=self.video_folder_var.get() or ".")
@@ -224,6 +227,7 @@ class VideoFrameSlicerApp:
         self.config.auto_enabled = self.auto_enabled_var.get()
         self.config.auto_step = auto_step
         self.config.use_roi = self.roi_var.get()
+        self.config.roi = self.extractor.roi if self.config.use_roi else None
         self.config.output_folder.mkdir(parents=True, exist_ok=True)
         if not self.config.use_roi:
             self.extractor.roi = None
@@ -237,6 +241,7 @@ class VideoFrameSlicerApp:
         self.extractor = VideoFrameExtractor(self.config)
         if self.config.use_roi:
             self.extractor.roi = selected_roi
+            self.config.roi = selected_roi
         self.video_files = self.extractor.list_videos()
         if not self.video_files:
             messagebox.showerror("No videos", self._no_videos_message())
@@ -291,6 +296,10 @@ class VideoFrameSlicerApp:
 
     def _handle_right_key(self, event=None) -> str:
         self._step(1)
+        return "break"
+
+    def _handle_escape_key(self, event=None) -> str:
+        self._skip_to_next_video()
         return "break"
 
     def _handle_space_press(self, event=None) -> str:
@@ -454,6 +463,7 @@ class VideoFrameSlicerApp:
         roi = self.extractor.select_roi_from_frame(raw_frame)
         self.roi_var.set(roi is not None)
         self.config.use_roi = roi is not None
+        self.config.roi = roi
         if self.current_raw_frame is not None:
             self._set_current_frame(self.current_raw_frame, self.current_frame_id)
         self.status_var.set("ROI selected." if roi else "ROI cancelled; full frame is used.")
@@ -475,7 +485,20 @@ class VideoFrameSlicerApp:
 
         self.video_index += 1
         self._open_current_video()
-        self._schedule_next_frame()
+        if self.is_paused:
+            self._advance_one_frame()
+        else:
+            self._play_next_frame()
+
+    def _skip_to_next_video(self) -> None:
+        if not self.is_running:
+            return
+
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+        self._cancel_space_advance()
+        self._next_video_or_finish()
 
     def _status_text(self) -> str:
         video_name = self.player.video_path.name if self.player.video_path else "-"
@@ -490,3 +513,38 @@ class VideoFrameSlicerApp:
         if self.config.selected_video_files:
             return "No supported video files found in selected files."
         return f"No video files found in: {self.config.video_folder}"
+
+    def _close(self) -> None:
+        self._apply_config_without_validation()
+        try:
+            save_slicer_config(self.config)
+        except OSError as error:
+            messagebox.showerror("Settings failed", f"Failed to save settings: {error}")
+        self._stop()
+        self.root.destroy()
+
+    def _apply_config_without_validation(self) -> None:
+        self.config.video_folder = Path(self.video_folder_var.get())
+        self.config.output_folder = Path(self.output_folder_var.get())
+        self.config.auto_enabled = self.auto_enabled_var.get()
+        self.config.auto_step = self._read_optional_positive_int(self.auto_step_var.get(), self.config.auto_step)
+        self.config.use_roi = self.roi_var.get()
+        self.config.roi = self.extractor.roi if self.config.use_roi else None
+
+        if self.resize_mode_var.get() != "resize":
+            self.config.target_size = None
+            return
+
+        width = self._read_optional_positive_int(self.width_var.get(), None)
+        height = self._read_optional_positive_int(self.height_var.get(), None)
+        if width is not None and height is not None:
+            self.config.target_size = (width, height)
+
+    def _read_optional_positive_int(self, value: str, default: int | None) -> int | None:
+        try:
+            parsed = int(value)
+        except ValueError:
+            return default
+        if parsed <= 0:
+            return default
+        return parsed
