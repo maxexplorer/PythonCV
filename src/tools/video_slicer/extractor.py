@@ -72,7 +72,7 @@ class VideoFrameExtractor:
         filename = f"{video_path.stem}_{prefix}_{frame_id}.jpg"
         output_path = self.config.output_folder / filename
 
-        if self.config.overwrite or not output_path.exists():
+        if not output_path.exists():
             return output_path
 
         suffix = 1

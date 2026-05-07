@@ -62,11 +62,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Start with ROI enabled. Use the Select ROI button to choose it.",
     )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing output files instead of adding a numeric suffix.",
-    )
     return parser.parse_args()
 
 
@@ -81,7 +76,6 @@ def main() -> None:
             auto_enabled=not args.manual,
             auto_step=max(args.auto_step, 1),
             use_roi=args.roi,
-            overwrite=args.overwrite,
         )
     )
     app.run()

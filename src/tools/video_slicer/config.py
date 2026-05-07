@@ -16,7 +16,6 @@ class SlicerConfig:
     auto_enabled: bool = True
     auto_step: int = 1
     use_roi: bool = False
-    overwrite: bool = False
 
     @property
     def resize_enabled(self) -> bool:

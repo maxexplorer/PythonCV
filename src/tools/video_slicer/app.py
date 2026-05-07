@@ -54,7 +54,6 @@ class VideoFrameSlicerApp:
         self.auto_enabled_var = BooleanVar(value=config.auto_enabled)
         self.auto_step_var = StringVar(value=str(config.auto_step))
         self.roi_var = BooleanVar(value=config.use_roi)
-        self.overwrite_var = BooleanVar(value=config.overwrite)
         self.status_var = StringVar(value="Choose folders and press Start.")
 
         self._build_ui()
@@ -113,7 +112,6 @@ class VideoFrameSlicerApp:
         Checkbutton(controls, text="Auto save", variable=self.auto_enabled_var).pack(anchor="w", pady=(14, 0))
         Label(controls, text="Frame interval").pack(anchor="w", pady=(4, 2))
         Entry(controls, textvariable=self.auto_step_var).pack(fill="x")
-        Checkbutton(controls, text="Overwrite files", variable=self.overwrite_var).pack(anchor="w", pady=(14, 0))
 
         Button(controls, text="Start", command=self._start).pack(fill="x", pady=(20, 4))
         Button(controls, text="Pause / Play", command=self._toggle_pause).pack(fill="x", pady=4)
@@ -229,7 +227,6 @@ class VideoFrameSlicerApp:
         self.config.auto_enabled = self.auto_enabled_var.get()
         self.config.auto_step = auto_step
         self.config.use_roi = self.roi_var.get()
-        self.config.overwrite = self.overwrite_var.get()
         self.config.output_folder.mkdir(parents=True, exist_ok=True)
         if not self.config.use_roi:
             self.extractor.roi = None
