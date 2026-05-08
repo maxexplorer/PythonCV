@@ -38,7 +38,28 @@ class VideoFrameExtractor:
             return frame
         if frame.shape[1] == target_size[0] and frame.shape[0] == target_size[1]:
             return frame
+        if self.config.scale_mode == "letterbox":
+            return self.letterbox(frame, target_size)
         return cv2.resize(frame, target_size)
+
+    def letterbox(self, frame, target_size: tuple[int, int], color: tuple[int, int, int] = (0, 0, 0)):
+        target_width, target_height = target_size
+        height, width = frame.shape[:2]
+        scale = min(target_width / width, target_height / height)
+        resized_width = int(round(width * scale))
+        resized_height = int(round(height * scale))
+
+        resized = cv2.resize(frame, (resized_width, resized_height))
+        canvas = cv2.copyMakeBorder(
+            resized,
+            (target_height - resized_height) // 2,
+            target_height - resized_height - (target_height - resized_height) // 2,
+            (target_width - resized_width) // 2,
+            target_width - resized_width - (target_width - resized_width) // 2,
+            cv2.BORDER_CONSTANT,
+            value=color,
+        )
+        return canvas
 
     def prepare_frame(self, frame):
         if self.roi is not None:

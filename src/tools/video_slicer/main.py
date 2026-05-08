@@ -76,6 +76,7 @@ def main() -> None:
             output_folder=Path(args.output_folder),
             selected_video_files=default_config.selected_video_files,
             target_size=parse_size(args.target_size),
+            scale_mode=default_config.scale_mode,
             auto_enabled=not args.manual,
             auto_step=max(args.auto_step, 1),
             use_roi=args.roi,

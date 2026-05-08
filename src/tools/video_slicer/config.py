@@ -4,6 +4,7 @@ from pathlib import Path
 
 Size = tuple[int, int]
 Roi = tuple[int, int, int, int]
+ScaleMode = str
 
 
 @dataclass
@@ -12,6 +13,7 @@ class SlicerConfig:
     output_folder: Path
     selected_video_files: list[Path] = field(default_factory=list)
     target_size: Size | None = None
+    scale_mode: ScaleMode = "resize"
     auto_enabled: bool = True
     auto_step: int = 1
     use_roi: bool = False
@@ -19,4 +21,4 @@ class SlicerConfig:
 
     @property
     def resize_enabled(self) -> bool:
-        return self.target_size is not None
+        return self.target_size is not None and self.scale_mode in {"resize", "letterbox"}

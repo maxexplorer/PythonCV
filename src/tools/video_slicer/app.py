@@ -9,6 +9,7 @@ from tkinter import (
     Label,
     Listbox,
     Radiobutton,
+    Scale,
     StringVar,
     Tk,
     filedialog,
@@ -36,6 +37,9 @@ class VideoFrameSlicerApp:
         self.player = VideoPlayer()
         self.video_files = []
         self.video_index = 0
+        self.stopped_video_path = None
+        self.stopped_frame_id = 0
+        self.resume_after_stop = False
         self.saved_count = 0
         self.is_running = False
         self.is_paused = True
@@ -46,11 +50,14 @@ class VideoFrameSlicerApp:
         self.after_id = None
         self.space_advance_after_id = None
         self.space_is_down = False
+        self.is_seeking = False
+        self.is_syncing_slider = False
+        self.seek_was_paused = True
 
         self.video_folder_var = StringVar(value=str(config.video_folder))
         self.output_folder_var = StringVar(value=str(config.output_folder))
         self.selected_files_var = StringVar(value="Selected files: 0")
-        self.resize_mode_var = StringVar(value="resize" if config.resize_enabled else "original")
+        self.resize_mode_var = StringVar(value=config.scale_mode if config.resize_enabled else "original")
         self.width_var = StringVar(value=str(config.target_size[0]) if config.target_size else "1280")
         self.height_var = StringVar(value=str(config.target_size[1]) if config.target_size else "720")
         self.auto_enabled_var = BooleanVar(value=config.auto_enabled)
@@ -98,6 +105,13 @@ class VideoFrameSlicerApp:
             value="resize",
             command=self._sync_resize_controls,
         ).pack(anchor="w")
+        Radiobutton(
+            controls,
+            text="Letterbox",
+            variable=self.resize_mode_var,
+            value="letterbox",
+            command=self._sync_resize_controls,
+        ).pack(anchor="w")
 
         size_frame = Frame(controls)
         size_frame.pack(fill="x", pady=(4, 0))
@@ -117,7 +131,11 @@ class VideoFrameSlicerApp:
 
         Checkbutton(controls, text="Auto save", variable=self.auto_enabled_var).pack(anchor="w", pady=(14, 0))
         Label(controls, text="Frame interval").pack(anchor="w", pady=(4, 2))
-        Entry(controls, textvariable=self.auto_step_var).pack(fill="x")
+        self.auto_step_entry = Entry(controls, textvariable=self.auto_step_var)
+        self.auto_step_entry.pack(fill="x")
+        self._bind_numeric_entry_hotkeys(self.width_entry)
+        self._bind_numeric_entry_hotkeys(self.height_entry)
+        self._bind_numeric_entry_hotkeys(self.auto_step_entry)
 
         Button(controls, text="Start", command=self._start).pack(fill="x", pady=(20, 4))
         Button(controls, text="Pause / Play", command=self._toggle_pause).pack(fill="x", pady=4)
@@ -132,6 +150,17 @@ class VideoFrameSlicerApp:
 
         self.preview_label = Label(preview, bg="#111111")
         self.preview_label.pack(fill="both", expand=True)
+        self.frame_slider = Scale(
+            preview,
+            from_=1,
+            to=1,
+            orient="horizontal",
+            showvalue=False,
+            command=self._handle_slider_move,
+        )
+        self.frame_slider.pack(fill="x", pady=(6, 0))
+        self.frame_slider.bind("<ButtonPress-1>", self._handle_slider_press)
+        self.frame_slider.bind("<ButtonRelease-1>", self._handle_slider_release)
         Label(preview, textvariable=self.status_var, anchor="w").pack(fill="x", pady=(8, 0))
 
     def _build_path_row(self, parent: Frame, label: str, variable: StringVar, command) -> None:
@@ -161,6 +190,23 @@ class VideoFrameSlicerApp:
         self.root.bind_all("<Left>", self._handle_left_key)
         self.root.bind_all("<Right>", self._handle_right_key)
         self.root.bind_all("<Escape>", self._handle_escape_key)
+
+    def _bind_numeric_entry_hotkeys(self, entry: Entry) -> None:
+        entry.bind("<KeyPress-s>", self._handle_save_key)
+        entry.bind("<KeyPress-S>", self._handle_save_key)
+        entry.bind("<KeyPress-space>", self._handle_space_press)
+        entry.bind("<KeyRelease-space>", self._handle_space_release)
+        entry.bind("<KeyPress-p>", self._handle_pause_key)
+        entry.bind("<KeyPress-P>", self._handle_pause_key)
+        entry.bind("<Left>", self._handle_left_key)
+        entry.bind("<Right>", self._handle_right_key)
+        entry.bind("<Escape>", self._handle_escape_key)
+        entry.bind("<Return>", self._handle_numeric_entry_return)
+
+    def _handle_numeric_entry_return(self, event=None) -> str:
+        self.root.focus_set()
+        self._apply_running_settings() if self.is_running else self._save_current_settings()
+        return "break"
 
     def _choose_video_folder(self) -> None:
         folder = filedialog.askdirectory(initialdir=self.video_folder_var.get() or ".")
@@ -206,7 +252,7 @@ class VideoFrameSlicerApp:
             self._save_current_settings()
 
     def _sync_resize_controls(self) -> None:
-        state = "normal" if self.resize_mode_var.get() == "resize" else "disabled"
+        state = "normal" if self.resize_mode_var.get() in {"resize", "letterbox"} else "disabled"
         self.width_entry.configure(state=state)
         self.height_entry.configure(state=state)
 
@@ -223,7 +269,8 @@ class VideoFrameSlicerApp:
         try:
             auto_step = self._read_positive_int(self.auto_step_var.get(), "Frame interval")
             target_size = None
-            if self.resize_mode_var.get() == "resize":
+            scale_mode = self.resize_mode_var.get()
+            if scale_mode in {"resize", "letterbox"}:
                 width = self._read_positive_int(self.width_var.get(), "Width")
                 height = self._read_positive_int(self.height_var.get(), "Height")
                 target_size = (width, height)
@@ -234,6 +281,7 @@ class VideoFrameSlicerApp:
         self.config.video_folder = Path(self.video_folder_var.get())
         self.config.output_folder = Path(self.output_folder_var.get())
         self.config.target_size = target_size
+        self.config.scale_mode = scale_mode
         self.config.auto_enabled = self.auto_enabled_var.get()
         self.config.auto_step = auto_step
         self.config.use_roi = self.roi_var.get()
@@ -262,16 +310,23 @@ class VideoFrameSlicerApp:
             messagebox.showerror("No videos", self._no_videos_message())
             return
 
-        self.video_index = 0
+        resumed = self._restore_stopped_position()
+        if not resumed:
+            self.video_index = 0
+            self.stopped_frame_id = 0
         self.saved_count = 0
         self.is_running = True
         self.is_paused = False
         self._open_current_video()
-        self._play_next_frame()
+        if resumed:
+            self._resume_from_stopped_frame()
+        else:
+            self._play_next_frame()
 
     def _open_current_video(self) -> None:
         video_path = self.video_files[self.video_index]
         self.player.open(video_path)
+        self._configure_frame_slider()
         self.saved_count = 0
         self.current_raw_frame = None
         self.current_processed_frame = None
@@ -279,6 +334,11 @@ class VideoFrameSlicerApp:
         self.status_var.set(f"Processing {video_path.name}")
 
     def _stop(self) -> None:
+        was_running = self.is_running
+        if was_running:
+            self.stopped_video_path = self.player.video_path
+            self.stopped_frame_id = self.current_frame_id
+            self.resume_after_stop = self.stopped_video_path is not None and self.stopped_frame_id > 0
         self.is_running = False
         self.is_paused = True
         if self.after_id is not None:
@@ -287,6 +347,28 @@ class VideoFrameSlicerApp:
         self._cancel_space_advance()
         self.player.close()
         self.status_var.set("Stopped.")
+
+    def _restore_stopped_position(self) -> bool:
+        if not self.resume_after_stop or self.stopped_video_path is None:
+            return False
+
+        try:
+            self.video_index = self.video_files.index(self.stopped_video_path)
+        except ValueError:
+            self.resume_after_stop = False
+            return False
+
+        return True
+
+    def _resume_from_stopped_frame(self) -> None:
+        target = max(self.stopped_frame_id - 1, 0)
+        ok, raw_frame, frame_id = self.player.read_at(target)
+        if ok:
+            self._set_current_frame(raw_frame, frame_id)
+            self._schedule_next_frame()
+        else:
+            self._play_next_frame()
+        self.resume_after_stop = False
 
     def _toggle_pause(self) -> None:
         if not self.is_running:
@@ -395,6 +477,7 @@ class VideoFrameSlicerApp:
             messagebox.showerror("Frame error", str(error))
             return
         self._show_frame(self.current_processed_frame)
+        self._sync_frame_slider()
         self.status_var.set(self._status_text())
 
     def _show_frame(self, frame) -> None:
@@ -545,11 +628,61 @@ class VideoFrameSlicerApp:
         self._cancel_space_advance()
         self._next_video_or_finish()
 
+    def _configure_frame_slider(self) -> None:
+        total = max(self.player.frame_count, 1)
+        self.frame_slider.configure(from_=1, to=total, state="normal")
+        self.frame_slider.set(1)
+
+    def _sync_frame_slider(self) -> None:
+        if self.is_seeking:
+            return
+        self.is_syncing_slider = True
+        self.frame_slider.set(max(self.current_frame_id, 1))
+        self.is_syncing_slider = False
+
+    def _handle_slider_press(self, event=None) -> None:
+        self.is_seeking = True
+        self.seek_was_paused = self.is_paused
+        self.is_paused = True
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+        self._cancel_space_advance()
+
+    def _handle_slider_release(self, event=None) -> None:
+        self._seek_to_slider_frame(restore_playback=True)
+        self.is_seeking = False
+
+    def _handle_slider_move(self, value: str) -> None:
+        if self.is_syncing_slider:
+            return
+        if self.is_seeking:
+            self._seek_to_slider_frame(restore_playback=False)
+            return
+
+    def _seek_to_slider_frame(self, restore_playback: bool) -> None:
+        if not self.is_running:
+            return
+
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+        self._cancel_space_advance()
+
+        target_frame_id = int(float(self.frame_slider.get()))
+        ok, raw_frame, frame_id = self.player.read_at(target_frame_id - 1)
+        if ok:
+            self._set_current_frame(raw_frame, frame_id)
+
+        self.is_paused = self.seek_was_paused if restore_playback else True
+        if not self.is_paused:
+            self._schedule_next_frame()
+
     def _status_text(self) -> str:
         state = "Paused" if self.is_paused else "Playing"
         total = self.player.frame_count or "?"
         return (
-            f"{state}: {self._current_video_info_text()} | frame {self.current_frame_id}/{total} | "
+            f"{state}: {self._current_video_info_text()} | pos {self.current_frame_id}/{total} | "
             f"saved {self.saved_count}"
         )
 
@@ -563,7 +696,7 @@ class VideoFrameSlicerApp:
             return "size -"
 
         height, width = frame.shape[:2]
-        label = "ROI" if self.extractor.roi is not None else "frame"
+        label = "ROI size" if self.extractor.roi is not None else "frame size"
         return f"{label} {width}x{height}"
 
     def _no_videos_message(self) -> str:
@@ -607,7 +740,9 @@ class VideoFrameSlicerApp:
         self.config.use_roi = self.roi_var.get()
         self.config.roi = self.extractor.roi if self.config.use_roi else None
 
-        if self.resize_mode_var.get() != "resize":
+        scale_mode = self.resize_mode_var.get()
+        self.config.scale_mode = scale_mode
+        if scale_mode not in {"resize", "letterbox"}:
             self.config.target_size = None
             return
 
