@@ -148,7 +148,10 @@ class VideoFrameSlicerApp:
 
         Button(controls, text="Stop", command=self._stop).pack(fill="x", pady=(16, 4))
 
-        self.preview_label = Label(preview, bg="#111111")
+        self.preview_frame = Frame(preview, bg="#111111")
+        self.preview_frame.pack(fill="both", expand=True)
+        self.preview_frame.pack_propagate(False)
+        self.preview_label = Label(self.preview_frame, bg="#111111")
         self.preview_label.pack(fill="both", expand=True)
         self.frame_slider = Scale(
             preview,
@@ -523,6 +526,10 @@ class VideoFrameSlicerApp:
 
     def _step(self, direction: int) -> None:
         if not self.is_running or not self.is_paused:
+            return
+
+        if direction > 0 and self.player.frame_count and self.current_frame_id >= self.player.frame_count:
+            self._next_video_or_finish()
             return
 
         target = self.current_frame_id - 1 + direction
